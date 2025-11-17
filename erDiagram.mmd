@@ -1,0 +1,165 @@
+erDiagram
+
+    SCHOOL {
+        uuid id PK
+        string name
+        string address
+        string phone
+        string email
+        string license_number
+        enum subscription_tier
+        datetime subscription_start
+        datetime subscription_end
+        boolean is_active
+        datetime created_at
+    }
+
+    STUDENT {
+        uuid id PK
+        uuid school_id FK
+        string nisn
+        string name
+        date birth_date
+        enum grade_level
+        string class_name
+        boolean is_active
+        datetime created_at
+    }
+
+    PARENT {
+        uuid id PK
+        uuid student_id FK
+        string name
+        string phone
+        string email
+        boolean is_active
+        datetime created_at
+    }
+
+    TEACHER {
+        uuid id PK
+        uuid school_id FK
+        string name
+        string phone
+        string email
+        boolean is_active
+        datetime created_at
+    }
+
+    CLASS {
+        uuid id PK
+        uuid school_id FK
+        string name
+        string grade_level
+        boolean is_active
+        datetime created_at
+    }
+
+    WALLET {
+        uuid id PK
+        uuid student_id FK
+        decimal balance
+        datetime created_at
+    }
+
+    TOP_UP {
+        uuid id PK
+        uuid wallet_id FK
+        decimal amount
+        datetime created_at
+    }
+
+    ALLOWANCE {
+        uuid id PK
+        uuid student_id FK
+        decimal daily_limit
+        boolean is_active
+        datetime created_at
+    }
+
+    SPENDING_LIMIT {
+        uuid id PK
+        uuid student_id FK
+        decimal limit_amount
+        boolean is_active
+        datetime created_at
+    }
+
+    CANTEEN {
+        uuid id PK
+        uuid school_id FK
+        string name
+        boolean is_active
+        datetime created_at
+    }
+
+    MENU_ITEM {
+        uuid id PK
+        uuid canteen_id FK
+        string name
+        decimal price
+        boolean is_active
+        datetime created_at
+    }
+
+    TRANSACTION {
+        uuid id PK
+        uuid wallet_id FK
+        uuid canteen_id FK
+        decimal total_amount
+        datetime created_at
+    }
+
+    TRANSACTION_ITEM {
+        uuid id PK
+        uuid transaction_id FK
+        uuid menu_item_id FK
+        integer qty
+        decimal subtotal
+    }
+
+    DEVICE {
+        uuid id PK
+        uuid school_id FK
+        string device_identifier
+        boolean is_active
+        datetime created_at
+    }
+
+    DEVICE_LOG {
+        uuid id PK
+        uuid device_id FK
+        string action
+        datetime created_at
+    }
+
+    FINGERPRINT {
+        uuid id PK
+        uuid student_id FK
+        string fp_template
+        datetime created_at
+    }
+
+    %% RELATIONSHIPS
+    SCHOOL ||--o{ STUDENT : has
+    SCHOOL ||--o{ TEACHER : employs
+    SCHOOL ||--o{ CLASS : provides
+    SCHOOL ||--o{ CANTEEN : has
+    SCHOOL ||--o{ DEVICE : owns
+
+    STUDENT ||--|| WALLET : "has"
+    STUDENT ||--o{ PARENT : "linked_to"
+    STUDENT ||--o{ ALLOWANCE : "gets"
+    STUDENT ||--o{ SPENDING_LIMIT : "has"
+    STUDENT ||--o{ FINGERPRINT : "uses"
+
+    WALLET ||--o{ TOP_UP : "receives"
+    WALLET ||--o{ TRANSACTION : "spends"
+
+    CANTEEN ||--o{ MENU_ITEM : "sells"
+    CANTEEN ||--o{ TRANSACTION : "processes"
+
+    TRANSACTION ||--o{ TRANSACTION_ITEM : "contains"
+    MENU_ITEM ||--o{ TRANSACTION_ITEM : "part_of"
+
+    DEVICE ||--o{ DEVICE_LOG : "records"
