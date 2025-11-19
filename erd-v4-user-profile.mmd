@@ -1,6 +1,6 @@
 erDiagram
 
-    ORGANIZATION {
+    organization {
         uuid id PK
         string name "Organization name"
         string slug "UNIQUE - untuk URL"
@@ -25,22 +25,29 @@ erDiagram
         uuid deleted_by FK "NULLABLE"
     }
 
-    USER {
+    user {
         uuid id PK
         string username "UNIQUE"
         string email "UNIQUE"
         string password_hash
+        datetime email_verified_at "NULLABLE - NULL = belum verified"
+        string remember_token "NULLABLE - for remember me"
+        boolean two_factor_enabled "DEFAULT false"
+        text two_factor_secret "NULLABLE - encrypted"
+        text two_factor_recovery_codes "NULLABLE - encrypted JSON"
+        datetime two_factor_confirmed_at "NULLABLE"
+        datetime last_password_change_at "NULLABLE"
         boolean is_active
-        datetime last_login_at
+        datetime last_login_at "NULLABLE"
         datetime created_at
         datetime updated_at
-        datetime deleted_at
+        datetime deleted_at "NULLABLE"
         uuid created_by FK "NULLABLE"
         uuid updated_by FK "NULLABLE"
         uuid deleted_by FK "NULLABLE"
     }
 
-    PROFILE {
+    profile {
         uuid id PK
         uuid user_id FK "UNIQUE - one profile per user"
         string name
@@ -54,11 +61,10 @@ erDiagram
         uuid updated_by FK "NULLABLE"
     }
 
-    STAFF {
+    staff {
         uuid id PK
         uuid user_id FK "UNIQUE"
         uuid organization_id FK "NULL untuk super_admin"
-        enum staff_role "super_admin, org_admin, outlet_admin, cashier, hr_admin"
         boolean is_active
         datetime created_at
         datetime updated_at
@@ -68,14 +74,14 @@ erDiagram
         uuid deleted_by FK "NULLABLE"
     }
 
-    GUARDIAN {
+    guardian {
         uuid id PK
         uuid user_id FK "UNIQUE"
         uuid organization_id FK
         string nik "NIK/KTP number - NULLABLE"
-        boolean is_verified
-        datetime email_verified_at "NULLABLE"
-        datetime phone_verified_at "NULLABLE"
+        string phone "NULLABLE"
+        boolean is_verified "Account verified by admin"
+        datetime phone_verified_at "NULLABLE - phone OTP verification"
         datetime created_at
         datetime updated_at
         datetime deleted_at
@@ -84,7 +90,7 @@ erDiagram
         uuid deleted_by FK "NULLABLE"
     }
 
-    TENANT {
+    tenant {
         uuid id PK
         uuid organization_id FK
         string name "Kantin Pusat, Cafeteria, Koperasi, Store"
@@ -101,7 +107,7 @@ erDiagram
         UNIQUE organization_id_slug
     }
 
-    MEMBER {
+    member {
         uuid id PK
         uuid user_id FK "NULLABLE - NULL for school, REQUIRED for industry"
         uuid organization_id FK
@@ -129,7 +135,7 @@ erDiagram
         UNIQUE organization_id_member_number
     }
 
-    MEMBER_GUARDIAN {
+    member_guardian {
         uuid id PK
         uuid member_id FK
         uuid guardian_id FK
@@ -145,7 +151,7 @@ erDiagram
         UNIQUE member_id_guardian_id
     }
 
-    WALLET {
+    wallet {
         uuid id PK
         uuid member_id FK
         enum wallet_type "main, savings, meal_allowance, transport"
@@ -164,7 +170,7 @@ erDiagram
         UNIQUE member_id_wallet_type
     }
 
-    WALLET_TOPUP {
+    wallet_topup {
         uuid id PK
         uuid wallet_id FK
         uuid organization_id FK "Denormalized for query performance"
@@ -188,7 +194,7 @@ erDiagram
         CHECK topped_up_by_one_not_null "Exactly one topped_up_by must be NOT NULL"
     }
 
-    SPENDING_LIMIT {
+    spending_limit {
         uuid id PK
         uuid wallet_id FK
         string limit_name "Uang Jajan Harian, Limit Weekend"
@@ -210,7 +216,7 @@ erDiagram
         uuid updated_by FK "NULLABLE"
     }
 
-    MENU_ITEM {
+    menu_item {
         uuid id PK
         uuid tenant_id FK
         string name "Nasi Goreng, Sandwich, Coffee"
@@ -231,14 +237,14 @@ erDiagram
         uuid deleted_by FK "NULLABLE"
     }
 
-    PURCHASE {
+    purchase {
         uuid id PK
         uuid member_id FK "Denormalized for query performance"
         uuid wallet_id FK
         uuid organization_id FK "Denormalized for reporting"
         uuid tenant_id FK
         uuid device_id FK "NULLABLE - manual purchase without device"
-        uuid cashier_id FK "references STAFF(id)"
+        uuid cashier_id FK "references staff(id)"
         string purchase_code "UNIQUE - PU20251117001"
         decimal total_amount "Total before discount"
         decimal discount_amount "NULLABLE - total discount"
@@ -257,7 +263,7 @@ erDiagram
         uuid updated_by FK "NULLABLE"
     }
 
-    PURCHASE_ITEM {
+    purchase_item {
         uuid id PK
         uuid purchase_id FK
         uuid menu_item_id FK
@@ -271,7 +277,7 @@ erDiagram
         uuid created_by FK "NULLABLE"
     }
 
-    DEVICE {
+    device {
         uuid id PK
         uuid organization_id FK
         uuid tenant_id FK "NULLABLE - device bisa org-level"
@@ -289,7 +295,7 @@ erDiagram
         uuid updated_by FK "NULLABLE"
     }
 
-    FINGERPRINT {
+    fingerprint {
         uuid id PK
         uuid member_id FK
         enum finger_position "thumb_left, thumb_right, index_left, index_right, middle_left, middle_right"
@@ -308,7 +314,7 @@ erDiagram
         UNIQUE member_id_finger_position
     }
 
-    NOTIFICATION {
+    notification {
         uuid id PK
         enum recipient_type "guardian, member, staff"
         uuid recipient_id "Polymorphic - guardian/member/staff.id"
@@ -328,41 +334,122 @@ erDiagram
         uuid created_by FK "NULLABLE"
     }
 
+    role {
+        uuid id PK
+        uuid organization_id FK "NULLABLE - NULL for global roles"
+        string name "super_admin, org_admin, cashier, etc"
+        string slug "UNIQUE per org - super-admin, org-admin"
+        string guard_name "web, api"
+        text description "NULLABLE - Role description"
+        boolean is_system "true=cannot be deleted, false=custom role"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        UNIQUE organization_id_slug_guard_name
+    }
+
+    permission {
+        uuid id PK
+        uuid organization_id FK "NULLABLE - NULL for global permissions"
+        string name "manage_wallets, create_topup, refund_purchase"
+        string slug "UNIQUE per org - manage-wallets"
+        string guard_name "web, api"
+        string group "wallet, transaction, user, report"
+        text description "NULLABLE - Permission description"
+        boolean is_system "true=cannot be deleted, false=custom"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        UNIQUE organization_id_slug_guard_name
+    }
+
+    role_has_permission {
+        uuid role_id FK
+        uuid permission_id FK
+        datetime created_at
+        PRIMARY_KEY role_id_permission_id
+    }
+
+    model_has_role {
+        uuid id PK
+        uuid role_id FK
+        string model_type "user, staff, guardian, member"
+        uuid model_id "Polymorphic - user.id, staff.id, etc"
+        datetime assigned_at
+        datetime expires_at "NULLABLE - temporary role"
+        uuid assigned_by FK "NULLABLE - who assigned this role"
+        datetime created_at
+        UNIQUE role_id_model_type_model_id
+    }
+
+    model_has_permission {
+        uuid id PK
+        uuid permission_id FK
+        string model_type "user, staff, guardian, member"
+        uuid model_id "Polymorphic - user.id, staff.id, etc"
+        datetime assigned_at
+        datetime expires_at "NULLABLE - temporary permission"
+        uuid assigned_by FK "NULLABLE - who assigned this permission"
+        datetime created_at
+        UNIQUE permission_id_model_type_model_id
+    }
+
     %% Relationships
-    ORGANIZATION ||--o{ STAFF : organization_id
-    ORGANIZATION ||--o{ TENANT : organization_id
-    ORGANIZATION ||--o{ GUARDIAN : organization_id
-    ORGANIZATION ||--o{ MEMBER : organization_id
-    ORGANIZATION ||--o{ DEVICE : organization_id
+    organization ||--o{ staff : organization_id
+    organization ||--o{ tenant : organization_id
+    organization ||--o{ guardian : organization_id
+    organization ||--o{ member : organization_id
+    organization ||--o{ device : organization_id
 
-    USER ||--|| PROFILE : user_id
-    USER ||--o| STAFF : user_id
-    USER ||--o| GUARDIAN : user_id
-    USER ||--o| MEMBER : user_id
+    user ||--|| profile : user_id
+    user ||--o| staff : user_id
+    user ||--o| guardian : user_id
+    user ||--o| member : user_id
 
-    MEMBER ||--o{ MEMBER_GUARDIAN : member_id
-    GUARDIAN ||--o{ MEMBER_GUARDIAN : guardian_id
+    member ||--o{ member_guardian : member_id
+    guardian ||--o{ member_guardian : guardian_id
 
-    MEMBER ||--o{ WALLET : member_id
-    WALLET ||--o{ WALLET_TOPUP : wallet_id
-    WALLET ||--o{ PURCHASE : wallet_id
-    WALLET ||--o{ SPENDING_LIMIT : wallet_id
-    GUARDIAN ||--o{ WALLET_TOPUP : topped_up_by_guardian_id
-    MEMBER ||--o{ WALLET_TOPUP : topped_up_by_member_id
-    STAFF ||--o{ WALLET_TOPUP : topped_up_by_staff_id
+    member ||--o{ wallet : member_id
+    wallet ||--o{ wallet_topup : wallet_id
+    wallet ||--o{ purchase : wallet_id
+    wallet ||--o{ spending_limit : wallet_id
+    guardian ||--o{ wallet_topup : topped_up_by_guardian_id
+    member ||--o{ wallet_topup : topped_up_by_member_id
+    staff ||--o{ wallet_topup : topped_up_by_staff_id
 
-    TENANT ||--o{ MENU_ITEM : tenant_id
-    TENANT ||--o{ PURCHASE : tenant_id
-    TENANT ||--o{ DEVICE : tenant_id
+    tenant ||--o{ menu_item : tenant_id
+    tenant ||--o{ purchase : tenant_id
+    tenant ||--o{ device : tenant_id
 
-    PURCHASE ||--o{ PURCHASE_ITEM : purchase_id
-    MENU_ITEM ||--o{ PURCHASE_ITEM : menu_item_id
-    MEMBER ||--o{ PURCHASE : member_id
-    STAFF ||--o{ PURCHASE : cashier_id
-    DEVICE ||--o{ PURCHASE : device_id
+    purchase ||--o{ purchase_item : purchase_id
+    menu_item ||--o{ purchase_item : menu_item_id
+    member ||--o{ purchase : member_id
+    staff ||--o{ purchase : cashier_id
+    device ||--o{ purchase : device_id
 
-    MEMBER ||--o{ FINGERPRINT : member_id
+    member ||--o{ fingerprint : member_id
 
-    GUARDIAN ||--o{ NOTIFICATION : recipient_id
-    MEMBER ||--o{ NOTIFICATION : recipient_id
-    STAFF ||--o{ NOTIFICATION : recipient_id
+    guardian ||--o{ notification : recipient_id
+    member ||--o{ notification : recipient_id
+    staff ||--o{ notification : recipient_id
+
+    %% RBAC Relationships
+    organization ||--o{ role : organization_id
+    organization ||--o{ permission : organization_id
+
+    role ||--o{ role_has_permission : role_id
+    permission ||--o{ role_has_permission : permission_id
+
+    role ||--o{ model_has_role : role_id
+    user ||--o{ model_has_role : model_id
+    staff ||--o{ model_has_role : model_id
+    guardian ||--o{ model_has_role : model_id
+    member ||--o{ model_has_role : model_id
+
+    permission ||--o{ model_has_permission : permission_id
+    user ||--o{ model_has_permission : model_id
+    staff ||--o{ model_has_permission : model_id
+    guardian ||--o{ model_has_permission : model_id
+    member ||--o{ model_has_permission : model_id
