@@ -1,0 +1,222 @@
+flowchart TD
+    %% ============================================
+    %% MMD - INTEGRATED SYSTEM FLOWCHART
+    %% ============================================
+
+    %% ENTRY POINTS
+    START([System Entry]) --> ACTOR{Actor Type?}
+
+    %% ============================================
+    %% ACTOR ROUTING
+    %% ============================================
+
+    ACTOR -->|Admin| ADMIN_ACTION{Admin Action?}
+    ACTOR -->|Guardian| GUARDIAN_ACTION{Guardian Action?}
+    ACTOR -->|Cashier| CASHIER_ACTION{Cashier Action?}
+    ACTOR -->|Member| MEMBER_ACTION{Member Action?}
+
+    %% ============================================
+    %% ADMIN ACTIONS
+    %% ============================================
+
+    ADMIN_ACTION -->|Register Member| REG1[Input Member Data]
+    ADMIN_ACTION -->|Manage Organization| ORG_SETTINGS[Organization Settings]
+    ADMIN_ACTION -->|Process Refund| REFUND_START
+
+    REG1 --> REG2[Create member record]
+    REG2 --> REG3[Create wallet<br/>balance: 0]
+    REG3 --> REG4[Enroll Fingerprint]
+    REG4 --> REG5[Capture Template]
+    REG5 --> REG6{Quality >= 60?}
+    REG6 -->|No| REG5
+    REG6 -->|Yes| REG7[Encrypt & Store]
+    REG7 --> REG8{Set PIN?}
+    REG8 -->|Yes| REG9[Hash PIN]
+    REG8 -->|No| REG10[Skip PIN]
+    REG9 --> REG11[Link Guardian]
+    REG10 --> REG11
+    REG11 --> REG12[Member Ready]
+    REG12 --> NOTIFY_GUARDIAN[Notify Guardian:<br/>Member Registered]
+
+    %% ============================================
+    %% GUARDIAN ACTIONS
+    %% ============================================
+
+    GUARDIAN_ACTION -->|Top-up| TOPUP_START
+    GUARDIAN_ACTION -->|Set Limits| SET_LIMITS
+    GUARDIAN_ACTION -->|View History| VIEW_HISTORY
+
+    %% TOP-UP FLOW
+    TOPUP_START[Select Wallet] --> TOPUP_METHOD{Payment Method?}
+
+    TOPUP_METHOD -->|QRIS| QRIS[Generate QRIS]
+    TOPUP_METHOD -->|Bank Transfer| VA[Show Virtual Account]
+    TOPUP_METHOD -->|E-Wallet| EWALLET[Redirect E-Wallet]
+    TOPUP_METHOD -->|Cash| CASH[Staff Input Amount]
+
+    QRIS --> PENDING[Create wallet_topup<br/>status: pending]
+    VA --> PENDING
+    EWALLET --> PENDING
+    CASH --> PENDING
+
+    PENDING --> CALLBACK{Payment Gateway<br/>Callback}
+
+    CALLBACK -->|Success| TOPUP_SUCCESS[status: completed]
+    CALLBACK -->|Failed| TOPUP_FAILED[status: failed]
+    CALLBACK -->|Expired| TOPUP_EXPIRED[status: expired]
+
+    TOPUP_SUCCESS --> LEDGER_CREDIT[Create wallet_ledger<br/>entry_type: credit]
+    LEDGER_CREDIT --> UPDATE_BALANCE[Update wallet.balance]
+    UPDATE_BALANCE --> NOTIFY_TOPUP[Notify Guardian:<br/>Top-up Success]
+    NOTIFY_TOPUP --> AUDIT_TOPUP[Create audit_log]
+    AUDIT_TOPUP --> READY_PURCHASE([Balance Ready<br/>for Purchase])
+
+    TOPUP_FAILED --> NOTIFY_FAIL[Notify: Failed]
+    TOPUP_EXPIRED --> NOTIFY_FAIL
+
+    %% SET SPENDING LIMITS
+    SET_LIMITS --> LIMIT_CONFIG[Configure:<br/>- Daily limit<br/>- Time window<br/>- Categories]
+    LIMIT_CONFIG --> SAVE_LIMIT[Save spending_limit]
+    SAVE_LIMIT --> NOTIFY_LIMIT[Notify Guardian:<br/>Limit Updated]
+
+    %% ============================================
+    %% CASHIER/MEMBER - PURCHASE FLOW
+    %% ============================================
+
+    CASHIER_ACTION -->|Process Purchase| SCAN_FP
+    MEMBER_ACTION -->|Self Service| SCAN_FP
+
+    SCAN_FP[Member Scan<br/>Fingerprint] --> FP_CHECK{fingerprint<br/>is_active?}
+
+    FP_CHECK -->|No| FP_DISABLED[Error: Disabled]
+    FP_CHECK -->|Yes| LOCK_CHECK{locked_until<br/>expired?}
+
+    LOCK_CHECK -->|Locked| USE_PIN
+    LOCK_CHECK -->|Not Locked| MATCH[Template Matching]
+
+    MATCH --> MATCH_RESULT{Match?}
+
+    MATCH_RESULT -->|Yes| RESET_FAIL[Reset failed_attempts]
+    MATCH_RESULT -->|No| INC_FAIL[Increment failed_attempts]
+
+    INC_FAIL --> FAIL_CHECK{attempts >= 3?}
+    FAIL_CHECK -->|No| SCAN_FP
+    FAIL_CHECK -->|Yes| LOCK_FP[Lock +15 min]
+    LOCK_FP --> USE_PIN
+
+    USE_PIN[Show PIN Input] --> PIN_CHECK{PIN Valid?}
+    PIN_CHECK -->|No| REJECT[Reject Transaction]
+    PIN_CHECK -->|Yes| RESET_FAIL
+
+    RESET_FAIL --> GET_MEMBER[Get Member Info<br/>& Wallet]
+
+    GET_MEMBER --> NETWORK_CHECK{Network<br/>Status?}
+
+    %% ONLINE PURCHASE
+    NETWORK_CHECK -->|Online| ADD_ITEMS[Cashier Add Items]
+    ADD_ITEMS --> CALC_TOTAL[Calculate Total]
+
+    CALC_TOTAL --> CHECK_LIMITS{Check Spending<br/>Limits}
+
+    CHECK_LIMITS --> TIME_CHECK{Within Time<br/>Window?}
+    TIME_CHECK -->|No| LIMIT_ERROR[Error: Outside<br/>allowed time]
+    TIME_CHECK -->|Yes| DAILY_CHECK{Daily limit<br/>OK?}
+
+    DAILY_CHECK -->|No| LIMIT_ERROR
+    DAILY_CHECK -->|Yes| TX_CHECK{Per-tx limit<br/>OK?}
+
+    TX_CHECK -->|No| LIMIT_ERROR
+    TX_CHECK -->|Yes| CAT_CHECK{Categories<br/>allowed?}
+
+    CAT_CHECK -->|No| LIMIT_ERROR
+    CAT_CHECK -->|Yes| BALANCE_CHECK{Balance<br/>sufficient?}
+
+    LIMIT_ERROR --> NOTIFY_LIMIT_ERROR[Notify Guardian:<br/>Limit Exceeded]
+
+    BALANCE_CHECK -->|No| BALANCE_ERROR[Error: Insufficient<br/>Balance]
+    BALANCE_CHECK -->|Yes| CREATE_PURCHASE[Create purchase<br/>status: completed]
+
+    CREATE_PURCHASE --> CREATE_ITEMS[Create purchase_items]
+    CREATE_ITEMS --> LEDGER_DEBIT[Create wallet_ledger<br/>entry_type: debit]
+    LEDGER_DEBIT --> DEDUCT_BALANCE[Update wallet.balance]
+    DEDUCT_BALANCE --> UPDATE_STOCK[Update menu_item.stock]
+    UPDATE_STOCK --> PRINT_RECEIPT[Print Receipt]
+
+    PRINT_RECEIPT --> LOW_BAL_CHECK{Balance <br/>< threshold?}
+
+    LOW_BAL_CHECK -->|Yes| NOTIFY_LOW[Notify Guardian:<br/>Low Balance]
+    LOW_BAL_CHECK -->|No| NOTIFY_PURCHASE
+    NOTIFY_LOW --> NOTIFY_PURCHASE[Notify Guardian:<br/>Purchase Complete]
+
+    NOTIFY_PURCHASE --> AUDIT_PURCHASE[Create audit_log]
+    AUDIT_PURCHASE --> DONE([Transaction<br/>Complete])
+
+    %% OFFLINE PURCHASE
+    NETWORK_CHECK -->|Offline| OFFLINE_CHECK{offline_mode<br/>enabled?}
+
+    OFFLINE_CHECK -->|No| NETWORK_ERROR[Error: Network<br/>Required]
+    OFFLINE_CHECK -->|Yes| CACHE_VERIFY[Verify with<br/>Cached Template]
+
+    CACHE_VERIFY --> RESERVED_CHECK{reserved_balance<br/>enough?}
+
+    RESERVED_CHECK -->|No| OFFLINE_ERROR[Error: Insufficient<br/>Offline Balance]
+    RESERVED_CHECK -->|Yes| LOCAL_TX[Create Local<br/>Transaction]
+
+    LOCAL_TX --> QUEUE[Store in<br/>offline_transaction_queue]
+    QUEUE --> LOCAL_DEDUCT[Deduct from<br/>reserved_balance]
+    LOCAL_DEDUCT --> OFFLINE_RECEIPT[Print Offline<br/>Receipt]
+
+    OFFLINE_RECEIPT --> SYNC_WAIT([Wait for<br/>Network])
+
+    SYNC_WAIT --> ONLINE_AGAIN[Device Online]
+    ONLINE_AGAIN --> SYNC[Sync Queue<br/>to Server]
+
+    SYNC --> SERVER_VALIDATE{Server<br/>Validation}
+
+    SERVER_VALIDATE -->|Valid| SYNC_SUCCESS[Create Real Purchase<br/>sync_status: completed]
+    SERVER_VALIDATE -->|Invalid| SYNC_FAIL[sync_status: failed<br/>Alert Admin]
+
+    SYNC_SUCCESS --> RELEASE[Release<br/>reserved_balance]
+    RELEASE --> DELAYED_NOTIFY[Send Delayed<br/>Notification]
+    DELAYED_NOTIFY --> DONE
+
+    %% ============================================
+    %% REFUND FLOW
+    %% ============================================
+
+    REFUND_START[Select Purchase<br/>to Refund] --> REFUND_CHECK{Purchase<br/>Status?}
+
+    REFUND_CHECK -->|Already Refunded| REFUND_ERROR[Error: Already<br/>Refunded]
+    REFUND_CHECK -->|Completed| REFUND_TYPE{Full or<br/>Partial?}
+
+    REFUND_TYPE -->|Full| FULL_REFUND[refund_amount =<br/>final_amount]
+    REFUND_TYPE -->|Partial| PARTIAL_REFUND[Input Amount]
+
+    FULL_REFUND --> REFUND_STATUS[Update status:<br/>refunded]
+    PARTIAL_REFUND --> PARTIAL_STATUS[Update status:<br/>partially_refunded]
+
+    REFUND_STATUS --> LEDGER_REFUND[Create wallet_ledger<br/>type: refund]
+    PARTIAL_STATUS --> LEDGER_REFUND
+
+    LEDGER_REFUND --> REFUND_BALANCE[Credit wallet.balance]
+    REFUND_BALANCE --> RESTORE_STOCK[Restore stock]
+    RESTORE_STOCK --> NOTIFY_REFUND[Notify Guardian:<br/>Refund Processed]
+    NOTIFY_REFUND --> AUDIT_REFUND[Create audit_log]
+    AUDIT_REFUND --> DONE
+
+    %% ============================================
+    %% STYLING
+    %% ============================================
+
+    classDef entry fill:#e1f5fe,stroke:#01579b
+    classDef success fill:#c8e6c9,stroke:#2e7d32
+    classDef error fill:#ffcdd2,stroke:#c62828
+    classDef process fill:#fff3e0,stroke:#e65100
+    classDef decision fill:#f3e5f5,stroke:#7b1fa2
+    classDef notify fill:#e8f5e9,stroke:#388e3c
+
+    class START,DONE,READY_PURCHASE,SYNC_WAIT entry
+    class TOPUP_SUCCESS,CREATE_PURCHASE,SYNC_SUCCESS,REFUND_STATUS,PARTIAL_STATUS success
+    class REJECT,FP_DISABLED,LIMIT_ERROR,BALANCE_ERROR,NETWORK_ERROR,OFFLINE_ERROR,REFUND_ERROR,SYNC_FAIL error
+    class REG1,REG2,REG3,SCAN_FP,ADD_ITEMS,LOCAL_TX process
+    class NOTIFY_GUARDIAN,NOTIFY_TOPUP,NOTIFY_PURCHASE,NOTIFY_LOW,NOTIFY_REFUND notify

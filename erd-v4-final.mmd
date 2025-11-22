@@ -1,0 +1,578 @@
+erDiagram
+
+    %% ============================================
+    %% CORE ORGANIZATION & USER MANAGEMENT
+    %% ============================================
+
+    organization {
+        uuid id PK
+        string name "Organization name"
+        string slug "UNIQUE - untuk URL"
+        enum sector_type "school, industry, corporate, retail, government"
+        string address
+        string city
+        string province
+        string postal_code
+        string phone
+        string email "UNIQUE"
+        string logo_url
+        enum subscription_tier "trial, basic, premium, enterprise"
+        datetime subscription_start
+        datetime subscription_end
+        boolean is_active
+        json sector_settings "Sector-specific configuration"
+        boolean offline_mode_enabled "DEFAULT false"
+        json offline_settings "Offline mode configuration"
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        uuid deleted_by FK "NULLABLE"
+    }
+
+    user {
+        uuid id PK
+        string username "UNIQUE"
+        string email "UNIQUE"
+        string password_hash
+        datetime email_verified_at "NULLABLE - NULL = belum verified"
+        string remember_token "NULLABLE - for remember me"
+        boolean two_factor_enabled "DEFAULT false"
+        text two_factor_secret "NULLABLE - encrypted"
+        text two_factor_recovery_codes "NULLABLE - encrypted JSON"
+        datetime two_factor_confirmed_at "NULLABLE"
+        datetime last_password_change_at "NULLABLE"
+        boolean is_active
+        datetime last_login_at "NULLABLE"
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at "NULLABLE"
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        uuid deleted_by FK "NULLABLE"
+    }
+
+    profile {
+        uuid id PK
+        uuid user_id FK "UNIQUE - one profile per user"
+        string name
+        string phone "NULLABLE"
+        string photo_url "NULLABLE"
+        string address "NULLABLE"
+        boolean is_public "Public or private profile"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+    }
+
+    staff {
+        uuid id PK
+        uuid user_id FK "UNIQUE"
+        uuid organization_id FK "NULL untuk super_admin"
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        uuid deleted_by FK "NULLABLE"
+    }
+
+    guardian {
+        uuid id PK
+        uuid user_id FK "UNIQUE"
+        uuid organization_id FK
+        string nik "NIK/KTP number - NULLABLE"
+        string phone "NULLABLE"
+        boolean is_verified "Account verified by admin"
+        datetime phone_verified_at "NULLABLE - phone OTP verification"
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        uuid deleted_by FK "NULLABLE"
+    }
+
+    tenant {
+        uuid id PK
+        uuid organization_id FK
+        string name "Kantin Pusat, Cafeteria, Koperasi, Store"
+        string slug "UNIQUE per organization"
+        string location "Lantai 1 Gedung A, Floor 3"
+        string description "NULLABLE"
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        uuid deleted_by FK "NULLABLE"
+        UNIQUE organization_id_slug
+    }
+
+    member {
+        uuid id PK
+        uuid user_id FK "NULLABLE - NULL for school, REQUIRED for industry"
+        uuid organization_id FK
+        string member_number "NIS/Employee ID - unique per org"
+        string name
+        string photo_url "NULLABLE"
+        date birth_date "NULLABLE"
+        enum gender "male, female, other"
+        enum member_type "student, employee, worker, customer"
+        boolean self_managed "true=industry, false=school"
+        string grade "School: 7-12, Industry: NULL"
+        string class_name "School: 7A, Industry: NULL"
+        string department "School: NULL, Industry: IT/Finance/HR"
+        string position "School: NULL, Industry: Manager/Staff"
+        string address "NULLABLE"
+        string phone "NULLABLE"
+        string email "NULLABLE - industry: REQUIRED"
+        string pin_hash "NULLABLE - 6 digit PIN backup jika fingerprint fail"
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        uuid deleted_by FK "NULLABLE"
+        UNIQUE organization_id_member_number
+    }
+
+    member_guardian {
+        uuid id PK
+        uuid member_id FK
+        uuid guardian_id FK
+        enum relationship "father, mother, grandfather, grandmother, sibling, uncle, aunt, guardian, emergency_contact, other"
+        boolean is_primary "Only one primary guardian per member"
+        boolean can_topup "Permission to topup wallet"
+        boolean can_view_transactions "Permission to view purchase history"
+        boolean can_set_limits "Permission to set spending limits"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        UNIQUE member_id_guardian_id
+    }
+
+    %% ============================================
+    %% FINANCIAL MANAGEMENT
+    %% ============================================
+
+    wallet {
+        uuid id PK
+        uuid member_id FK
+        enum wallet_type "main, savings, meal_allowance, transport"
+        string wallet_name "NULLABLE - Uang Jajan, Tunjangan Makan"
+        decimal balance "Current balance"
+        decimal reserved_balance "DEFAULT 0 - untuk offline mode"
+        decimal available_balance "GENERATED - balance minus reserved"
+        decimal pending_balance "DEFAULT 0 - topup belum confirmed"
+        string currency "IDR, USD"
+        boolean is_primary "One primary wallet per member"
+        boolean is_active
+        boolean is_frozen "Frozen by admin/guardian/member"
+        string frozen_reason "NULLABLE"
+        datetime frozen_at "NULLABLE"
+        datetime last_synced_at "NULLABLE - last device sync"
+        int offline_transaction_count "DEFAULT 0"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        UNIQUE member_id_wallet_type
+        CHECK balance_non_negative "balance >= 0"
+        CHECK reserved_not_exceed "reserved_balance <= balance"
+    }
+
+    wallet_ledger {
+        uuid id PK
+        uuid wallet_id FK
+        uuid organization_id FK "Denormalized for query"
+        enum entry_type "credit, debit"
+        decimal amount "Always positive"
+        decimal balance_before
+        decimal balance_after
+        enum transaction_type "topup, purchase, refund, adjustment, transfer_in, transfer_out, reservation, reservation_release"
+        string reference_type "NULLABLE - wallet_topup, purchase"
+        uuid reference_id "NULLABLE"
+        text description
+        boolean is_offline "true jika dari offline transaction"
+        datetime processed_at
+        datetime created_at
+        uuid created_by FK "NULLABLE"
+        CHECK balance_non_negative "balance_after >= 0"
+        CHECK amount_positive "amount > 0"
+    }
+
+    wallet_topup {
+        uuid id PK
+        uuid wallet_id FK
+        uuid organization_id FK "Denormalized for query performance"
+        uuid topped_up_by_guardian_id FK "NULLABLE - for school sector"
+        uuid topped_up_by_member_id FK "NULLABLE - for industry (self topup)"
+        uuid topped_up_by_staff_id FK "NULLABLE - admin manual topup"
+        string topup_code "UNIQUE - TU20251117001"
+        decimal amount
+        enum payment_method "bank_transfer, ewallet, qris, cash, payroll_deduction, bulk_transfer"
+        string payment_reference "Reference dari payment gateway"
+        enum status "pending, completed, failed, expired, refunded"
+        json payment_metadata "Gateway response, receipt URL"
+        datetime processed_at "NULLABLE"
+        datetime refunded_at "NULLABLE"
+        decimal refund_amount "NULLABLE"
+        text refund_reason "NULLABLE"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        CHECK topped_up_by_one_not_null "Exactly one topped_up_by must be NOT NULL"
+    }
+
+    spending_limit {
+        uuid id PK
+        uuid wallet_id FK
+        string limit_name "Uang Jajan Harian, Limit Weekend"
+        decimal daily_limit "NULLABLE - NULL = no limit"
+        decimal per_transaction_limit "NULLABLE"
+        time allowed_start_time "NULLABLE - NULL = 00:00"
+        time allowed_end_time "NULLABLE - NULL = 23:59"
+        date effective_from "When this limit starts"
+        date effective_until "NULLABLE - NULL = no end date"
+        enum apply_on "all_days, weekdays, weekends, specific_dates"
+        json specific_dates "NULLABLE - [2025-12-25, 2025-12-31]"
+        int priority "Higher number = higher priority"
+        json allowed_categories "NULLABLE - [makanan, minuman]"
+        json blocked_categories "NULLABLE - [permen, soda]"
+        boolean is_active
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+    }
+
+    %% ============================================
+    %% TRANSACTION MANAGEMENT
+    %% ============================================
+
+    menu_item {
+        uuid id PK
+        uuid tenant_id FK
+        string name "Nasi Goreng, Sandwich, Coffee"
+        string sku "SKU - NULLABLE"
+        text description "NULLABLE"
+        decimal price
+        string category "food, beverage, snack, stationery, merchandise"
+        string image_url "NULLABLE"
+        boolean is_available
+        int stock_quantity "0 = unlimited if track_stock=false"
+        boolean track_stock "Track inventory or not"
+        int low_stock_threshold "Alert when stock below this"
+        datetime created_at
+        datetime updated_at
+        datetime deleted_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        uuid deleted_by FK "NULLABLE"
+    }
+
+    purchase {
+        uuid id PK
+        uuid member_id FK "Denormalized for query performance"
+        uuid wallet_id FK
+        uuid organization_id FK "Denormalized for reporting"
+        uuid tenant_id FK
+        uuid device_id FK "NULLABLE - manual purchase without device"
+        uuid cashier_id FK "references staff(id)"
+        string purchase_code "UNIQUE - PU20251117001"
+        decimal total_amount "Total before discount"
+        decimal discount_amount "NULLABLE - total discount"
+        decimal final_amount "What member pays"
+        enum status "completed, failed, refunded, partially_refunded"
+        enum payment_method "wallet, cash, mixed"
+        datetime purchase_time
+        json verification_data "Fingerprint quality, device info"
+        text notes "NULLABLE - cashier notes"
+        datetime refunded_at "NULLABLE"
+        decimal refund_amount "NULLABLE"
+        text refund_reason "NULLABLE"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE - same as cashier_id"
+        uuid updated_by FK "NULLABLE"
+    }
+
+    purchase_item {
+        uuid id PK
+        uuid purchase_id FK
+        uuid menu_item_id FK
+        string item_name "Snapshot - nama menu saat beli"
+        string item_sku "NULLABLE"
+        decimal item_price "Snapshot - harga saat beli"
+        int quantity
+        decimal subtotal "item_price * quantity"
+        decimal discount_amount "NULLABLE - discount per item"
+        datetime created_at
+        uuid created_by FK "NULLABLE"
+    }
+
+    %% ============================================
+    %% OFFLINE TRANSACTION SUPPORT
+    %% ============================================
+
+    offline_transaction_queue {
+        uuid id PK
+        uuid organization_id FK
+        uuid device_id FK
+        uuid member_id FK
+        uuid wallet_id FK
+        uuid tenant_id FK
+        string local_transaction_id "ID generated di device"
+        enum transaction_type "purchase"
+        decimal amount
+        json transaction_data "Full transaction details"
+        json items_data "Purchase items"
+        datetime local_created_at "Timestamp di device"
+        enum sync_status "pending, processing, completed, failed, conflict"
+        int sync_attempts
+        datetime last_sync_attempt_at "NULLABLE"
+        text sync_error_message "NULLABLE"
+        uuid synced_transaction_id "NULLABLE - hasil sync"
+        datetime synced_at "NULLABLE"
+        json conflict_data "NULLABLE"
+        enum resolution_status "NULLABLE - auto_resolved, manual_required, resolved"
+        uuid resolved_by FK "NULLABLE - staff"
+        datetime resolved_at "NULLABLE"
+        text resolution_notes "NULLABLE"
+        datetime created_at
+        datetime updated_at
+        UNIQUE device_id_local_transaction_id
+    }
+
+    %% ============================================
+    %% DEVICE & BIOMETRIC
+    %% ============================================
+
+    device {
+        uuid id PK
+        uuid organization_id FK
+        uuid tenant_id FK "NULLABLE - device bisa org-level"
+        string device_code "UNIQUE - DEV001"
+        string device_serial
+        enum device_type "fingerprint_scanner, pos_terminal, tablet, kiosk"
+        string ip_address "NULLABLE"
+        string mac_address "NULLABLE"
+        enum status "active, inactive, maintenance, offline"
+        datetime last_heartbeat_at
+        json device_info "OS, app version, hardware specs"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+    }
+
+    fingerprint {
+        uuid id PK
+        uuid member_id FK
+        enum finger_position "thumb_left, thumb_right, index_left, index_right, middle_left, middle_right"
+        blob encrypted_template "Encrypted biometric template"
+        string template_hash "Hash for quick lookup"
+        float quality_score "0-100"
+        datetime enrolled_at
+        datetime last_verified_at "Last time used"
+        boolean is_active
+        int failed_attempts "Failed verification attempts"
+        datetime locked_until "NULLABLE - auto unlock after time"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        UNIQUE member_id_finger_position
+    }
+
+    %% ============================================
+    %% NOTIFICATION & COMMUNICATION
+    %% ============================================
+
+    notification {
+        uuid id PK
+        enum recipient_type "guardian, member, staff"
+        uuid recipient_id "Polymorphic - guardian/member/staff.id"
+        uuid organization_id FK "Denormalized for filtering"
+        string title "Low Balance, Purchase Success"
+        text message
+        enum type "topup, purchase, low_balance, alert, limit_reached, refund, payroll"
+        enum channel "in_app, email, sms, push"
+        enum status "pending, sent, failed, read"
+        boolean is_read
+        datetime sent_at "NULLABLE"
+        datetime read_at "NULLABLE"
+        int retry_count "For failed deliveries"
+        text error_message "NULLABLE - why delivery failed"
+        json data "Additional context data"
+        datetime created_at
+        uuid created_by FK "NULLABLE"
+    }
+
+    %% ============================================
+    %% SECURITY & VERIFICATION
+    %% ============================================
+
+    verification_code {
+        uuid id PK
+        string verifiable_type "user, guardian, member, staff"
+        uuid verifiable_id
+        enum purpose "email_verification, phone_verification, password_reset, two_factor"
+        string identifier "Email atau phone number"
+        string code "6-digit code"
+        string token_hash "NULLABLE - hashed token for URL"
+        boolean is_used
+        int attempts
+        int max_attempts "DEFAULT 3"
+        datetime expires_at
+        datetime verified_at "NULLABLE"
+        string ip_address "NULLABLE"
+        datetime created_at
+    }
+
+    %% ============================================
+    %% AUDIT & COMPLIANCE
+    %% ============================================
+
+    audit_log {
+        uuid id PK
+        uuid organization_id FK "NULLABLE - NULL for system-wide"
+        string auditable_type "wallet, member, purchase, topup, etc"
+        uuid auditable_id
+        string event "created, updated, deleted, balance_changed, login"
+        string actor_type "user, staff, guardian, member, system"
+        uuid actor_id "NULLABLE - NULL for system"
+        json old_values "NULLABLE"
+        json new_values "NULLABLE"
+        string ip_address "NULLABLE"
+        string user_agent "NULLABLE"
+        text description "NULLABLE"
+        datetime created_at
+    }
+
+    %% ============================================
+    %% RBAC - SPATIE LARAVEL PERMISSION PATTERN
+    %% ============================================
+
+    role {
+        uuid id PK
+        uuid organization_id FK "NULLABLE - NULL for global roles"
+        string name "super_admin, org_admin, cashier, etc"
+        string slug "UNIQUE per org"
+        string guard_name "web, api"
+        text description "NULLABLE"
+        boolean is_system "true = cannot be deleted"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        UNIQUE organization_id_slug_guard_name
+    }
+
+    permission {
+        uuid id PK
+        uuid organization_id FK "NULLABLE - NULL for global permissions"
+        string name "manage_wallets, create_topup, refund_purchase"
+        string slug "UNIQUE per org"
+        string guard_name "web, api"
+        string group "wallet, transaction, user, report"
+        text description "NULLABLE"
+        boolean is_system "true = cannot be deleted"
+        datetime created_at
+        datetime updated_at
+        uuid created_by FK "NULLABLE"
+        uuid updated_by FK "NULLABLE"
+        UNIQUE organization_id_slug_guard_name
+    }
+
+    role_has_permission {
+        uuid role_id FK
+        uuid permission_id FK
+        datetime created_at
+        PRIMARY_KEY role_id_permission_id
+    }
+
+    model_has_role {
+        uuid role_id FK
+        uuid model_id FK "user.id"
+        string model_type "App\\Models\\User"
+        datetime created_at
+        PRIMARY_KEY role_id_model_id_model_type
+    }
+
+    model_has_permission {
+        uuid permission_id FK
+        uuid model_id FK "user.id"
+        string model_type "App\\Models\\User"
+        datetime created_at
+        PRIMARY_KEY permission_id_model_id_model_type
+    }
+
+    %% ============================================
+    %% RELATIONSHIPS
+    %% ============================================
+
+    %% Organization relationships
+    organization ||--o{ staff : organization_id
+    organization ||--o{ tenant : organization_id
+    organization ||--o{ guardian : organization_id
+    organization ||--o{ member : organization_id
+    organization ||--o{ device : organization_id
+    organization ||--o{ audit_log : organization_id
+    organization ||--o{ wallet_ledger : organization_id
+    organization ||--o{ offline_transaction_queue : organization_id
+
+    %% User relationships
+    user ||--|| profile : user_id
+    user ||--o| staff : user_id
+    user ||--o| guardian : user_id
+    user ||--o| member : user_id
+
+    %% Member-Guardian relationships
+    member ||--o{ member_guardian : member_id
+    guardian ||--o{ member_guardian : guardian_id
+
+    %% Wallet relationships
+    member ||--o{ wallet : member_id
+    wallet ||--o{ wallet_topup : wallet_id
+    wallet ||--o{ wallet_ledger : wallet_id
+    wallet ||--o{ purchase : wallet_id
+    wallet ||--o{ spending_limit : wallet_id
+    wallet ||--o{ offline_transaction_queue : wallet_id
+    guardian ||--o{ wallet_topup : topped_up_by_guardian_id
+    member ||--o{ wallet_topup : topped_up_by_member_id
+    staff ||--o{ wallet_topup : topped_up_by_staff_id
+
+    %% Tenant relationships
+    tenant ||--o{ menu_item : tenant_id
+    tenant ||--o{ purchase : tenant_id
+    tenant ||--o{ device : tenant_id
+    tenant ||--o{ offline_transaction_queue : tenant_id
+
+    %% Purchase relationships
+    purchase ||--o{ purchase_item : purchase_id
+    menu_item ||--o{ purchase_item : menu_item_id
+    member ||--o{ purchase : member_id
+    staff ||--o{ purchase : cashier_id
+    device ||--o{ purchase : device_id
+
+    %% Device & Fingerprint relationships
+    member ||--o{ fingerprint : member_id
+    device ||--o{ offline_transaction_queue : device_id
+
+    %% Notification relationships (polymorphic)
+    guardian ||--o{ notification : recipient_id
+    member ||--o{ notification : recipient_id
+    staff ||--o{ notification : recipient_id
+
+    %% Offline queue resolution
+    staff ||--o{ offline_transaction_queue : resolved_by
+
