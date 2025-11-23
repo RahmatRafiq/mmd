@@ -21,8 +21,6 @@ erDiagram
         datetime subscription_end
         boolean is_active
         json sector_settings "Sector-specific configuration"
-        boolean offline_mode_enabled "DEFAULT false"
-        json offline_settings "Offline mode configuration"
         datetime created_at
         datetime updated_at
         datetime deleted_at
@@ -38,10 +36,6 @@ erDiagram
         string password_hash
         datetime email_verified_at "NULLABLE - NULL = belum verified"
         string remember_token "NULLABLE - for remember me"
-        boolean two_factor_enabled "DEFAULT false"
-        text two_factor_secret "NULLABLE - encrypted"
-        text two_factor_recovery_codes "NULLABLE - encrypted JSON"
-        datetime two_factor_confirmed_at "NULLABLE"
         datetime last_password_change_at "NULLABLE"
         boolean is_active
         datetime last_login_at "NULLABLE"
@@ -132,6 +126,8 @@ erDiagram
         string phone "NULLABLE"
         string email "NULLABLE - industry: REQUIRED"
         string pin_hash "NULLABLE - 6 digit PIN backup jika fingerprint fail"
+        boolean can_set_own_limits "DEFAULT false for school, true for industry"
+        boolean can_topup_own_wallet "DEFAULT false for school, true for industry"
         boolean is_active
         datetime created_at
         datetime updated_at
@@ -168,8 +164,6 @@ erDiagram
         enum wallet_type "main, savings, meal_allowance, transport"
         string wallet_name "NULLABLE - Uang Jajan, Tunjangan Makan"
         decimal balance "Current balance"
-        decimal reserved_balance "DEFAULT 0 - untuk offline mode"
-        decimal available_balance "GENERATED - balance minus reserved"
         decimal pending_balance "DEFAULT 0 - topup belum confirmed"
         string currency "IDR, USD"
         boolean is_primary "One primary wallet per member"
@@ -177,18 +171,15 @@ erDiagram
         boolean is_frozen "Frozen by admin/guardian/member"
         string frozen_reason "NULLABLE"
         datetime frozen_at "NULLABLE"
-        datetime last_synced_at "NULLABLE - last device sync"
-        int offline_transaction_count "DEFAULT 0"
         datetime created_at
         datetime updated_at
         uuid created_by FK "NULLABLE"
         uuid updated_by FK "NULLABLE"
         UNIQUE member_id_wallet_type
         CHECK balance_non_negative "balance >= 0"
-        CHECK reserved_not_exceed "reserved_balance <= balance"
     }
 
-    wallet_ledger {
+    wallet_history {
         uuid id PK
         uuid wallet_id FK
         uuid organization_id FK "Denormalized for query"
@@ -196,11 +187,10 @@ erDiagram
         decimal amount "Always positive"
         decimal balance_before
         decimal balance_after
-        enum transaction_type "topup, purchase, refund, adjustment, transfer_in, transfer_out, reservation, reservation_release"
+        enum transaction_type "topup, purchase, refund, adjustment, transfer_in, transfer_out"
         string reference_type "NULLABLE - wallet_topup, purchase"
         uuid reference_id "NULLABLE"
         text description
-        boolean is_offline "true jika dari offline transaction"
         datetime processed_at
         datetime created_at
         uuid created_by FK "NULLABLE"
@@ -219,12 +209,9 @@ erDiagram
         decimal amount
         enum payment_method "bank_transfer, ewallet, qris, cash, payroll_deduction, bulk_transfer"
         string payment_reference "Reference dari payment gateway"
-        enum status "pending, completed, failed, expired, refunded"
+        enum status "pending, completed, failed, expired"
         json payment_metadata "Gateway response, receipt URL"
         datetime processed_at "NULLABLE"
-        datetime refunded_at "NULLABLE"
-        decimal refund_amount "NULLABLE"
-        text refund_reason "NULLABLE"
         datetime created_at
         datetime updated_at
         uuid created_by FK "NULLABLE"
@@ -235,6 +222,7 @@ erDiagram
     spending_limit {
         uuid id PK
         uuid wallet_id FK
+        enum set_by_type "guardian, member, staff"
         string limit_name "Uang Jajan Harian, Limit Weekend"
         decimal daily_limit "NULLABLE - NULL = no limit"
         decimal per_transaction_limit "NULLABLE"
@@ -291,14 +279,11 @@ erDiagram
         decimal total_amount "Total before discount"
         decimal discount_amount "NULLABLE - total discount"
         decimal final_amount "What member pays"
-        enum status "completed, failed, refunded, partially_refunded"
+        enum status "completed, failed"
         enum payment_method "wallet, cash, mixed"
         datetime purchase_time
         json verification_data "Fingerprint quality, device info"
         text notes "NULLABLE - cashier notes"
-        datetime refunded_at "NULLABLE"
-        decimal refund_amount "NULLABLE"
-        text refund_reason "NULLABLE"
         datetime created_at
         datetime updated_at
         uuid created_by FK "NULLABLE - same as cashier_id"
@@ -317,39 +302,6 @@ erDiagram
         decimal discount_amount "NULLABLE - discount per item"
         datetime created_at
         uuid created_by FK "NULLABLE"
-    }
-
-    %% ============================================
-    %% OFFLINE TRANSACTION SUPPORT
-    %% ============================================
-
-    offline_transaction_queue {
-        uuid id PK
-        uuid organization_id FK
-        uuid device_id FK
-        uuid member_id FK
-        uuid wallet_id FK
-        uuid tenant_id FK
-        string local_transaction_id "ID generated di device"
-        enum transaction_type "purchase"
-        decimal amount
-        json transaction_data "Full transaction details"
-        json items_data "Purchase items"
-        datetime local_created_at "Timestamp di device"
-        enum sync_status "pending, processing, completed, failed, conflict"
-        int sync_attempts
-        datetime last_sync_attempt_at "NULLABLE"
-        text sync_error_message "NULLABLE"
-        uuid synced_transaction_id "NULLABLE - hasil sync"
-        datetime synced_at "NULLABLE"
-        json conflict_data "NULLABLE"
-        enum resolution_status "NULLABLE - auto_resolved, manual_required, resolved"
-        uuid resolved_by FK "NULLABLE - staff"
-        datetime resolved_at "NULLABLE"
-        text resolution_notes "NULLABLE"
-        datetime created_at
-        datetime updated_at
-        UNIQUE device_id_local_transaction_id
     }
 
     %% ============================================
@@ -415,27 +367,6 @@ erDiagram
         json data "Additional context data"
         datetime created_at
         uuid created_by FK "NULLABLE"
-    }
-
-    %% ============================================
-    %% SECURITY & VERIFICATION
-    %% ============================================
-
-    verification_code {
-        uuid id PK
-        string verifiable_type "user, guardian, member, staff"
-        uuid verifiable_id
-        enum purpose "email_verification, phone_verification, password_reset, two_factor"
-        string identifier "Email atau phone number"
-        string code "6-digit code"
-        string token_hash "NULLABLE - hashed token for URL"
-        boolean is_used
-        int attempts
-        int max_attempts "DEFAULT 3"
-        datetime expires_at
-        datetime verified_at "NULLABLE"
-        string ip_address "NULLABLE"
-        datetime created_at
     }
 
     %% ============================================
@@ -527,8 +458,7 @@ erDiagram
     organization ||--o{ member : organization_id
     organization ||--o{ device : organization_id
     organization ||--o{ audit_log : organization_id
-    organization ||--o{ wallet_ledger : organization_id
-    organization ||--o{ offline_transaction_queue : organization_id
+    organization ||--o{ wallet_history : organization_id
 
     %% User relationships
     user ||--|| profile : user_id
@@ -543,10 +473,9 @@ erDiagram
     %% Wallet relationships
     member ||--o{ wallet : member_id
     wallet ||--o{ wallet_topup : wallet_id
-    wallet ||--o{ wallet_ledger : wallet_id
+    wallet ||--o{ wallet_history : wallet_id
     wallet ||--o{ purchase : wallet_id
     wallet ||--o{ spending_limit : wallet_id
-    wallet ||--o{ offline_transaction_queue : wallet_id
     guardian ||--o{ wallet_topup : topped_up_by_guardian_id
     member ||--o{ wallet_topup : topped_up_by_member_id
     staff ||--o{ wallet_topup : topped_up_by_staff_id
@@ -555,7 +484,6 @@ erDiagram
     tenant ||--o{ menu_item : tenant_id
     tenant ||--o{ purchase : tenant_id
     tenant ||--o{ device : tenant_id
-    tenant ||--o{ offline_transaction_queue : tenant_id
 
     %% Purchase relationships
     purchase ||--o{ purchase_item : purchase_id
@@ -566,13 +494,9 @@ erDiagram
 
     %% Device & Fingerprint relationships
     member ||--o{ fingerprint : member_id
-    device ||--o{ offline_transaction_queue : device_id
 
     %% Notification relationships (polymorphic)
     guardian ||--o{ notification : recipient_id
     member ||--o{ notification : recipient_id
     staff ||--o{ notification : recipient_id
-
-    %% Offline queue resolution
-    staff ||--o{ offline_transaction_queue : resolved_by
 
